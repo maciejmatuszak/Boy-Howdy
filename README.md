@@ -51,6 +51,85 @@ Howdy uses OpenCV HighGUI for graphical preview. An OpenCV package may bring a
 GUI backend such as Qt, depending on how the distribution builds OpenCV; Qt is
 not a direct Howdy dependency.
 
+### Ubuntu 24.04 (Noble)
+
+Noble packages most dependencies, but four are absent or below the required
+version:
+
+| Dependency | Noble ships  | Howdy needs | Fix                    |
+|------------|--------------|-------------|------------------------|
+| `cmake`    | 3.28.3       | 3.31        | Kitware apt repository |
+| `opencv`   | 4.6.0        | 5.0.0       | Build from source      |
+| `libinih`  | 55           | 59          | Build from source      |
+| `yyjson`   | not packaged | 0.12.0      | Build from source      |
+
+Everything else comes from apt:
+
+```sh
+sudo apt install build-essential pkgconf gettext meson ninja-build \
+  libpam0g-dev libevdev-dev libacl1-dev libssl-dev libcurl4-openssl-dev
+```
+
+For CMake 3.31 or later, follow the Kitware apt repository instructions at
+<https://apt.kitware.com/>.
+
+#### OpenCV 5
+
+Howdy needs the `core`, `imgproc`, `imgcodecs`, `videoio`, `highgui`, `dnn` and
+`objdetect` modules. Qt 6 gives HighGUI a preview backend. Install to
+`/opt/opencv5` to keep the build apart from the apt `libopencv-dev` 4.6 files:
+
+```sh
+sudo apt install qt6-base-dev libv4l-dev libeigen3-dev libjpeg-dev libpng-dev \
+  libtiff-dev libwebp-dev libavformat-dev libswscale-dev libtbb-dev
+
+git clone --depth 1 --branch 5.0.0 https://github.com/opencv/opencv.git
+cmake -S opencv -B opencv/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/opt/opencv5 \
+  -DBUILD_LIST=core,imgproc,imgcodecs,videoio,highgui,dnn,objdetect \
+  -DOPENCV_GENERATE_PKGCONFIG=ON \
+  -DWITH_QT=6 \
+  -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
+cmake --build opencv/build --parallel "$(nproc)"
+sudo cmake --install opencv/build
+echo /opt/opencv5/lib | sudo tee /etc/ld.so.conf.d/opencv5.conf
+sudo ldconfig
+```
+
+`OPENCV_GENERATE_PKGCONFIG` is off by default and produces the `opencv5.pc`
+file that Howdy looks for.
+
+#### inih and yyjson
+
+Both install to `/usr/local`, which pkg-config and the linker cache search
+before `/usr`, so the newer `INIReader` shadows the apt `libinih-dev` 55 files:
+
+```sh
+git clone --depth 1 --branch r62 https://github.com/benhoyt/inih.git
+meson setup inih/build --prefix=/usr/local --buildtype=release \
+  -Ddistro_install=true -Dwith_INIReader=true -Ddefault_library=shared
+meson compile -C inih/build
+sudo meson install -C inih/build
+
+git clone --depth 1 --branch 0.13.0 https://github.com/ibireme/yyjson.git
+cmake -S yyjson -B yyjson/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DBUILD_SHARED_LIBS=ON
+cmake --build yyjson/build
+sudo cmake --install yyjson/build
+sudo ldconfig
+```
+
+#### Configure Howdy
+
+Point CMake at the OpenCV prefix so pkg-config finds `opencv5`:
+
+```sh
+cmake --preset release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_PREFIX_PATH=/opt/opencv5
+```
+
 ### Release
 
 For a distro-style system install, configure an appropriate prefix for your
